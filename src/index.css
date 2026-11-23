@@ -41,12 +41,14 @@ body {
   color: var(--tx);
   font: 15px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
-input, select, button {
+input, select, button, textarea {
   font: inherit; color: var(--tx); background: var(--card);
   border: 1px solid var(--bd); border-radius: 8px; padding: 7px 8px; min-width: 0;
 }
 input[type="checkbox"] { width: 18px; height: 18px; padding: 0; }
-button { cursor: pointer; }
+button { cursor: pointer; min-height: 40px; }
+/* 16px stops iOS Safari zooming the page when a field is focused. */
+input, textarea { font-size: 16px; }
 button:hover:not(:disabled) { border-color: var(--ac); }
 button:disabled { opacity: .55; cursor: default; }
 button.primary { background: var(--ac); border-color: var(--ac); color: #fff; font-weight: 600; }

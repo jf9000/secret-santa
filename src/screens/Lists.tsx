@@ -1,54 +1,110 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '../api'
+import { continueList, indent, outdent, toggleBullet, type Edit } from '../lib/editor'
 import { card } from '../ui'
 
-export default function Lists({ password, names, me }: { password: string; names: string[]; me: string }) {
-  const [lists, setLists] = useState<Record<string, string> | null>(null)
-  const [who, setWho] = useState(me)
-  const [text, setText] = useState('')
+const DELAY = 800
+
+/** One person's list, saved automatically shortly after typing stops. Text is only ever rendered by React as text. */
+export default function Lists({ password, name }: { password: string; name: string }) {
+  const [text, setText] = useState<string | null>(null)
   const [status, setStatus] = useState('')
+  const saved = useRef('') // last text known to be on the server
+  const latest = useRef('') // what's in the box right now
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const inflight = useRef(false)
+  const area = useRef<HTMLTextAreaElement>(null)
+  const sel = useRef<[number, number] | null>(null) // selection to restore after an edit re-renders
 
-  const load = () => api.lists(password).then((r) => setLists(r.lists)).catch((e) => setStatus(e.message))
-  useEffect(() => { load() }, [])
-  // Load the chosen person's list into the editor (only once the lists have arrived).
-  useEffect(() => { if (lists) setText(lists[who] ?? '') }, [who, lists === null])
+  useEffect(() => {
+    api.lists(password)
+      .then((r) => {
+        const t = r.lists[name] ?? ''
+        saved.current = latest.current = t
+        setText(t)
+      })
+      .catch((e) => setStatus(e.message))
+  }, [password, name])
 
-  async function save() {
+  const flush = useCallback(async () => {
+    clearTimeout(timer.current)
+    if (inflight.current) { timer.current = setTimeout(flush, 300); return } // one save at a time, in order
+    const t = latest.current
+    if (t === saved.current) return
+    inflight.current = true
     setStatus('Saving…')
     try {
-      await api.saveList(password, who, text)
-      setStatus('Saved ✓')
-      load()
+      await api.saveList(password, name, t)
+      saved.current = t
+      setStatus(latest.current === t ? 'Saved ✓' : 'Saving…')
     } catch (e) {
-      setStatus((e as Error).message)
+      setStatus(`Not saved: ${(e as Error).message}`)
+    }
+    inflight.current = false
+  }, [password, name])
+
+  // Save anything still pending when leaving the page.
+  useEffect(() => () => { flush() }, [flush])
+
+  function onChange(v: string) {
+    setText(v)
+    latest.current = v
+    setStatus('')
+    clearTimeout(timer.current)
+    timer.current = setTimeout(flush, DELAY)
+  }
+
+  useLayoutEffect(() => {
+    if (sel.current && area.current) area.current.setSelectionRange(...sel.current)
+    sel.current = null
+  })
+
+  function apply(fn: (t: string, s: number, e: number) => Edit | null) {
+    const a = area.current
+    if (!a) return false
+    const r = fn(a.value, a.selectionStart, a.selectionEnd)
+    if (!r) return false
+    sel.current = [r.start, r.end]
+    onChange(r.text)
+    return true
+  }
+
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.nativeEvent.isComposing) return
+    if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault()
+      apply(e.shiftKey ? outdent : indent)
+    } else if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+      if (apply((t, s, en) => (s === en ? continueList(t, s) : null))) e.preventDefault()
     }
   }
 
-  if (!lists) return <p className="text-mut">{status || 'Loading…'}</p>
-  const done = names.filter((n) => lists[n]?.trim())
-
+  if (text === null) return <p className="text-mut">{status || 'Loading…'}</p>
   return (
-    <div className="space-y-4">
-      <div className={`${card} space-y-3`}>
-        <select className="w-full" value={who} onChange={(e) => { setWho(e.target.value); setStatus('') }}>
-          {names.map((n) => (
-            <option key={n} value={n}>
-              {n === me ? `${n} (you)` : n}{lists[n]?.trim() ? ' ✓' : ''}
-            </option>
-          ))}
-        </select>
-        <textarea
-          className="w-full min-h-48 bg-card border border-bd rounded-lg p-2"
-          placeholder="One idea per line: gift ideas, sizes, favorite things, links…"
-          value={text}
-          onChange={(e) => { setText(e.target.value); setStatus('') }}
-        />
-        <div className="flex items-center gap-3">
-          <button className="primary" onClick={save}>Save {who === me ? 'my' : `${who}'s`} list</button>
-          <span className="text-mut">{status}</span>
-        </div>
+    <div className={`${card} space-y-3`}>
+      <div className="flex items-center">
+        <h2 className="text-lg font-semibold flex-1">{name}'s list</h2>
+        <span className="text-mut text-sm">{status}</span>
       </div>
-      <p className="text-mut text-sm">{done.length} of {names.length} lists are in.</p>
+      <div className="grid grid-cols-3 gap-2">
+        {([['• Bullet', toggleBullet], ['⇤ Outdent', outdent], ['⇥ Indent', indent]] as const).map(([label, fn]) => (
+          <button key={label} type="button" className="min-h-11"
+            onMouseDown={(e) => e.preventDefault()} // keep the keyboard open and the selection intact
+            onClick={() => { apply(fn); area.current?.focus() }}>
+            {label}
+          </button>
+        ))}
+      </div>
+      <textarea
+        ref={area}
+        className="w-full min-h-64 bg-card border border-bd rounded-lg p-2"
+        placeholder="One idea per line: gift ideas, sizes, favorite things, links…"
+        maxLength={5000}
+        value={text}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={onKeyDown}
+        onBlur={flush}
+      />
     </div>
   )
 }

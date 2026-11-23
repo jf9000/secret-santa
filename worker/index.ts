@@ -51,8 +51,9 @@ export default {
     if (put && req.method === 'PUT') {
       const name = decodeURIComponent(put[1]!)
       if (!names.includes(name)) return json({ error: 'Unknown name' }, 400)
-      const { text } = (await req.json()) as { text: string }
-      await env.SANTA.put(`list:${name}`, String(text).slice(0, 5000))
+      const body = (await req.json().catch(() => null)) as { text?: unknown } | null
+      if (typeof body?.text !== 'string' || body.text.length > 5000) return json({ error: 'Bad list' }, 400)
+      await env.SANTA.put(`list:${name}`, body.text)
       return json({ ok: true })
     }
 
