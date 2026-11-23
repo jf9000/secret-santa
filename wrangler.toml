@@ -1,0 +1,16 @@
+name = "secret-santa"
+main = "worker/index.ts"
+compatibility_date = "2025-01-01"
+
+# Everyone who is taking part, comma separated. Edit, then `npm run worker:deploy`.
+[vars]
+NAMES = "CW,Angie,Devin,Olenka,Jack,Bri,Hunter,Carissa,Jeremiah,Shylee"
+
+# Create with: npx wrangler kv namespace create SANTA   (paste the id it prints below)
+[[kv_namespaces]]
+binding = "SANTA"
+id = "f577e0c536c14d569a2cdac61fd3e2e9"
+
+# Passwords are secrets, not stored in this file:
+#   npx wrangler secret put FAMILY_PASSWORD
+#   npx wrangler secret put ADMIN_PASSWORD

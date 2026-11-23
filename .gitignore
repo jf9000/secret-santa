@@ -1,0 +1,7 @@
+node_modules
+dist
+*.local
+.cache
+*.tmp
+.dev.vars
+.wrangler
