@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import { continueList, indent, outdent, toggleBullet, type Edit } from '../lib/editor'
+import { backspaceBullet, continueList, indent, isBlank, newBullet, outdent, type Edit } from '../lib/editor'
 import { card } from '../ui'
 
 const DELAY = 800
@@ -29,14 +29,14 @@ export default function Lists({ password, name }: { password: string; name: stri
   const flush = useCallback(async () => {
     clearTimeout(timer.current)
     if (inflight.current) { timer.current = setTimeout(flush, 300); return } // one save at a time, in order
-    const t = latest.current
+    const t = isBlank(latest.current) ? '' : latest.current // a lone default bullet isn't a list
     if (t === saved.current) return
     inflight.current = true
     setStatus('Saving…')
     try {
       await api.saveList(password, name, t)
       saved.current = t
-      setStatus(latest.current === t ? 'Saved ✓' : 'Saving…')
+      setStatus(latest.current === t || (!t && isBlank(latest.current)) ? 'Saved ✓' : 'Saving…')
     } catch (e) {
       setStatus(`Not saved: ${(e as Error).message}`)
     }
@@ -74,6 +74,8 @@ export default function Lists({ password, name }: { password: string; name: stri
     if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault()
       apply(e.shiftKey ? outdent : indent)
+    } else if (e.key === 'Backspace' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (apply((t, s, en) => (s === en ? backspaceBullet(t, s) : null))) e.preventDefault()
     } else if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
       if (apply((t, s, en) => (s === en ? continueList(t, s) : null))) e.preventDefault()
     }
@@ -86,23 +88,15 @@ export default function Lists({ password, name }: { password: string; name: stri
         <h2 className="text-lg font-semibold flex-1">{name}'s list</h2>
         <span className="text-mut text-sm">{status}</span>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        {([['• Bullet', toggleBullet], ['⇤ Outdent', outdent], ['⇥ Indent', indent]] as const).map(([label, fn]) => (
-          <button key={label} type="button" className="min-h-11"
-            onMouseDown={(e) => e.preventDefault()} // keep the keyboard open and the selection intact
-            onClick={() => { apply(fn); area.current?.focus() }}>
-            {label}
-          </button>
-        ))}
-      </div>
       <textarea
         ref={area}
         className="w-full min-h-64 bg-card border border-bd rounded-lg p-2"
-        placeholder="One idea per line: gift ideas, sizes, favorite things, links…"
+        placeholder="● Gift ideas, sizes, favorite things, links…  (Tab to nest)"
         maxLength={5000}
         value={text}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={onKeyDown}
+        onFocus={() => { if (!latest.current) { sel.current = [2, 2]; onChange(newBullet()) } }}
         onBlur={flush}
       />
     </div>
